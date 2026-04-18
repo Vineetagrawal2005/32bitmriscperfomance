@@ -1,8 +1,3 @@
-// =============================================================================
-//  Shifter1.v  —  Left shift by 2 (branch offset: sign_imm << 2)
-//
-//  No functional changes — original was already optimal.
-// =============================================================================
 
 module Shifter1(
     input  wire [31:0] sign_Imm,

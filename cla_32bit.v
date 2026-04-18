@@ -1,111 +1,114 @@
 // =============================================================================
-//  cla_32bit.v  —  True 4-bit Group Carry-Lookahead Adder (32-bit)
-//
-//  OPTIMIZATIONS vs original:
-//  The original used a generate-loop with c[i+1] = g[i] | (p[i] & c[i]),
-//  which is a RIPPLE-CARRY structure in disguise — each carry bit depends
-//  on the previous one serially, giving O(n) critical path.
-//
-//  This version uses TRUE carry-lookahead:
-//    - Divided into 8 groups of 4 bits each.
-//    - Within each group, carry-out is computed in parallel using
-//      group generate (G) and group propagate (P) equations.
-//    - Group carries are then used to compute final carry into each group
-//      in parallel (2-level lookahead).
-//    - Critical path is now O(log n) rather than O(n).
-//    - Fully synthesizable — maps cleanly to LUT chains or carry chains
-//      on Xilinx/Intel FPGAs.
+//  cla_32bit_improved.v  -  Optimized 32-bit CLA with ADD/SUB + Overflow
 // =============================================================================
 
 module cla_32bit(
     input  wire [31:0] a,
     input  wire [31:0] b,
-    input  wire        cin,
+    input  wire        cin,     // carry in (used for ADD/SUB)
+    input  wire        sub,     // 0 = ADD, 1 = SUB
+
     output wire [31:0] sum,
-    output wire        cout
+    output wire        cout,
+    output wire        overflow
 );
 
-    // -------------------------------------------------------------------------
-    //  Bit-level generate and propagate
-    // -------------------------------------------------------------------------
-    wire [31:0] g = a & b;   // bit generate
-    wire [31:0] p = a ^ b;   // bit propagate  (also used for sum = p ^ carry_in)
+    // -------------------------------------------------------------
+    // Modify B for subtraction (Two's complement)
+    // -------------------------------------------------------------
+    wire [31:0] b_mod;
+    assign b_mod = sub ? ~b : b;
 
-    // -------------------------------------------------------------------------
-    //  8 groups of 4 bits: group generate (GG) and group propagate (GP)
-    //
-    //  For group i covering bits [4i+3 : 4i]:
-    //    GG[i] = g3 | p3g2 | p3p2g1 | p3p2p1g0
-    //    GP[i] = p3 & p2 & p1 & p0
-    // -------------------------------------------------------------------------
-    wire [7:0] GG, GP;  // group generate, group propagate
+    wire carry_in;
+    assign carry_in = sub ? 1'b1 : cin;
 
-    genvar g_idx;
+    // -------------------------------------------------------------
+    // Bit-level generate and propagate
+    // -------------------------------------------------------------
+    wire [31:0] g = a & b_mod;
+    wire [31:0] p = a ^ b_mod;
+
+    // -------------------------------------------------------------
+    // Group generate/propagate (8 groups of 4 bits)
+    // -------------------------------------------------------------
+    wire [7:0] GG, GP;
+
+    genvar i;
     generate
-        for (g_idx = 0; g_idx < 8; g_idx = g_idx + 1) begin : GRP
-            localparam B = g_idx * 4;   // base bit index for this group
-            assign GG[g_idx] = g[B+3]
-                              | (p[B+3] & g[B+2])
-                              | (p[B+3] & p[B+2] & g[B+1])
-                              | (p[B+3] & p[B+2] & p[B+1] & g[B+0]);
-            assign GP[g_idx] = p[B+3] & p[B+2] & p[B+1] & p[B+0];
+        for (i = 0; i < 8; i = i + 1) begin : GROUP
+            localparam B = i * 4;
+
+            assign GG[i] = g[B+3]
+                         | (p[B+3] & g[B+2])
+                         | (p[B+3] & p[B+2] & g[B+1])
+                         | (p[B+3] & p[B+2] & p[B+1] & g[B]);
+
+            assign GP[i] = p[B+3] & p[B+2] & p[B+1] & p[B];
         end
     endgenerate
 
-    // -------------------------------------------------------------------------
-    //  Carry into each group — computed in parallel using group G/P
-    //
-    //  C_group[0] = cin
-    //  C_group[i] = GG[i-1] | GP[i-1]*C_group[i-1]   (unrolled for speed)
-    // -------------------------------------------------------------------------
-    wire [8:0] C_group;
-    assign C_group[0] = cin;
-    assign C_group[1] = GG[0] | (GP[0] & C_group[0]);
-    assign C_group[2] = GG[1] | (GP[1] & GG[0]) | (GP[1] & GP[0] & C_group[0]);
-    assign C_group[3] = GG[2] | (GP[2] & GG[1]) | (GP[2] & GP[1] & GG[0])
-                               | (GP[2] & GP[1] & GP[0] & C_group[0]);
-    assign C_group[4] = GG[3] | (GP[3] & GG[2]) | (GP[3] & GP[2] & GG[1])
-                               | (GP[3] & GP[2] & GP[1] & GG[0])
-                               | (GP[3] & GP[2] & GP[1] & GP[0] & C_group[0]);
-    assign C_group[5] = GG[4] | (GP[4] & GG[3]) | (GP[4] & GP[3] & GG[2])
-                               | (GP[4] & GP[3] & GP[2] & GG[1])
-                               | (GP[4] & GP[3] & GP[2] & GP[1] & GG[0])
-                               | (GP[4] & GP[3] & GP[2] & GP[1] & GP[0] & C_group[0]);
-    assign C_group[6] = GG[5] | (GP[5] & GG[4]) | (GP[5] & GP[4] & GG[3])
-                               | (GP[5] & GP[4] & GP[3] & GG[2])
-                               | (GP[5] & GP[4] & GP[3] & GP[2] & GG[1])
-                               | (GP[5] & GP[4] & GP[3] & GP[2] & GP[1] & GG[0])
-                               | (GP[5] & GP[4] & GP[3] & GP[2] & GP[1] & GP[0] & C_group[0]);
-    assign C_group[7] = GG[6] | (GP[6] & GG[5]) | (GP[6] & GP[5] & GG[4])
-                               | (GP[6] & GP[5] & GP[4] & GG[3])
-                               | (GP[6] & GP[5] & GP[4] & GP[3] & GG[2])
-                               | (GP[6] & GP[5] & GP[4] & GP[3] & GP[2] & GG[1])
-                               | (GP[6] & GP[5] & GP[4] & GP[3] & GP[2] & GP[1] & GG[0])
-                               | (GP[6] & GP[5] & GP[4] & GP[3] & GP[2] & GP[1] & GP[0] & C_group[0]);
-    assign C_group[8] = GG[7] | (GP[7] & C_group[7]);   // final carry out
+    // -------------------------------------------------------------
+    // Group carry computation (lookahead)
+    // -------------------------------------------------------------
+    wire [8:0] Cg;
 
-    // -------------------------------------------------------------------------
-    //  Bit-level carry within each group (using true CLA equations)
-    // -------------------------------------------------------------------------
-    wire [31:0] c_bit;   // carry INTO each bit position
+    assign Cg[0] = carry_in;
+    assign Cg[1] = GG[0] | (GP[0] & Cg[0]);
+    assign Cg[2] = GG[1] | (GP[1] & GG[0]) | (GP[1] & GP[0] & Cg[0]);
+    assign Cg[3] = GG[2] | (GP[2] & GG[1]) | (GP[2] & GP[1] & GG[0])
+                            | (GP[2] & GP[1] & GP[0] & Cg[0]);
+    assign Cg[4] = GG[3] | (GP[3] & GG[2]) | (GP[3] & GP[2] & GG[1])
+                            | (GP[3] & GP[2] & GP[1] & GG[0])
+                            | (GP[3] & GP[2] & GP[1] & GP[0] & Cg[0]);
+    assign Cg[5] = GG[4] | (GP[4] & GG[3]) | (GP[4] & GP[3] & GG[2])
+                            | (GP[4] & GP[3] & GP[2] & GG[1])
+                            | (GP[4] & GP[3] & GP[2] & GP[1] & GG[0])
+                            | (GP[4] & GP[3] & GP[2] & GP[1] & GP[0] & Cg[0]);
+    assign Cg[6] = GG[5] | (GP[5] & GG[4]) | (GP[5] & GP[4] & GG[3])
+                            | (GP[5] & GP[4] & GP[3] & GG[2])
+                            | (GP[5] & GP[4] & GP[3] & GP[2] & GG[1])
+                            | (GP[5] & GP[4] & GP[3] & GP[2] & GP[1] & GG[0])
+                            | (GP[5] & GP[4] & GP[3] & GP[2] & GP[1] & GP[0] & Cg[0]);
+    assign Cg[7] = GG[6] | (GP[6] & GG[5]) | (GP[6] & GP[5] & GG[4])
+                            | (GP[6] & GP[5] & GP[4] & GG[3])
+                            | (GP[6] & GP[5] & GP[4] & GP[3] & GG[2])
+                            | (GP[6] & GP[5] & GP[4] & GP[3] & GP[2] & GG[1])
+                            | (GP[6] & GP[5] & GP[4] & GP[3] & GP[2] & GP[1] & GG[0])
+                            | (GP[6] & GP[5] & GP[4] & GP[3] & GP[2] & GP[1] & GP[0] & Cg[0]);
+    assign Cg[8] = GG[7] | (GP[7] & Cg[7]);
 
-    genvar b_idx;
+    // -------------------------------------------------------------
+    // Bit-level carry inside each group
+    // -------------------------------------------------------------
+    wire [31:0] c;
+
     generate
-        for (g_idx = 0; g_idx < 8; g_idx = g_idx + 1) begin : BIT_CARRY
-            localparam B = g_idx * 4;
-            wire cg = C_group[g_idx];  // carry into this group
-            assign c_bit[B+0] = cg;
-            assign c_bit[B+1] = g[B+0] | (p[B+0] & cg);
-            assign c_bit[B+2] = g[B+1] | (p[B+1] & g[B+0]) | (p[B+1] & p[B+0] & cg);
-            assign c_bit[B+3] = g[B+2] | (p[B+2] & g[B+1]) | (p[B+2] & p[B+1] & g[B+0])
-                                        | (p[B+2] & p[B+1] & p[B+0] & cg);
+        for (i = 0; i < 8; i = i + 1) begin : BIT
+            localparam B = i * 4;
+            wire cin_g = Cg[i];
+
+            assign c[B]   = cin_g;
+            assign c[B+1] = g[B]   | (p[B]   & cin_g);
+            assign c[B+2] = g[B+1] | (p[B+1] & g[B]) | (p[B+1] & p[B] & cin_g);
+            assign c[B+3] = g[B+2] | (p[B+2] & g[B+1]) | (p[B+2] & p[B+1] & g[B])
+                                      | (p[B+2] & p[B+1] & p[B] & cin_g);
         end
     endgenerate
 
-    // -------------------------------------------------------------------------
-    //  Sum and carry-out
-    // -------------------------------------------------------------------------
-    assign sum  = p ^ c_bit;
-    assign cout = C_group[8];
+    // -------------------------------------------------------------
+    // Final SUM
+    // -------------------------------------------------------------
+    assign sum = p ^ c;
+
+    // -------------------------------------------------------------
+    // Carry-out
+    // -------------------------------------------------------------
+    assign cout = Cg[8];
+
+    // -------------------------------------------------------------
+    // Overflow detection (signed)
+    // -------------------------------------------------------------
+    assign overflow = (a[31] & b_mod[31] & ~sum[31]) |
+                      (~a[31] & ~b_mod[31] & sum[31]);
 
 endmodule

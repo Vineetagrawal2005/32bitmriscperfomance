@@ -1,13 +1,3 @@
-// =============================================================================
-//  Control_Branch.v  —  Optimized Branch Control Logic
-//
-//  OPTIMIZATIONS vs original:
-//  1. Added BNE (Branch Not Equal) support via sig_BranchNE input.
-//     BNE fires pc_En when alu_Zero is 0 (result was NOT zero).
-//  2. Removed unused carry/overflow inputs — they added ports with no logic,
-//     causing confusion in synthesis.  Can be re-added if BLTZ/BGTZ needed.
-//  3. Pure combinational assign — no latency, no gates wasted.
-// =============================================================================
 
 module Control_Branch(
     input  wire sig_Branch,    // 1 when BEQ active

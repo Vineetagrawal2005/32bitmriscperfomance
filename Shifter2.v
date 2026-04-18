@@ -1,8 +1,3 @@
-// =============================================================================
-//  Shifter2.v  —  Left shift by 2 (jump target: instr[25:0] << 2 → 28-bit)
-//
-//  No functional changes — original was already optimal.
-// =============================================================================
 
 module Shifter2(
     input  wire [25:0] sign_Imm,

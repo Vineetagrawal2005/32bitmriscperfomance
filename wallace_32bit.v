@@ -1,23 +1,28 @@
-// =============================================================================
-//  wallace_32bit.v  —  32-bit Wallace Tree Multiplier
-//
-//  No functional changes — original implementation delegates to the
-//  synthesis tool to infer a DSP48/Wallace structure from `A * B`.
-//  This is the correct approach for FPGA targets (Vivado/Quartus will
-//  map to hard DSP blocks automatically).
-//
-//  For ASIC targets a full explicit Wallace tree would be needed.
-//  That is outside the scope of this academic MIPS project.
-// =============================================================================
-
 module wallace_32bit(
+    input  wire        clk,
+    input  wire        rst,
+    input  wire        enable,        // control from FSM
+    input  wire        signed_mode,   // 1 = signed multiply
     input  wire [31:0] A,
     input  wire [31:0] B,
-    output wire [31:0] product_lo
+
+    output reg  [63:0] product
 );
 
-    wire [63:0] full_product;
-    assign full_product = A * B;
-    assign product_lo   = full_product[31:0];
+    wire [63:0] mult_result;
+
+    // Signed / Unsigned selection
+    wire signed [31:0] A_s = A;
+    wire signed [31:0] B_s = B;
+
+    assign mult_result = signed_mode ? (A_s * B_s) : (A * B);
+
+    // Register output (important for timing)
+    always @(posedge clk or posedge rst) begin
+        if (rst)
+            product <= 64'd0;
+        else if (enable)
+            product <= mult_result;
+    end
 
 endmodule
