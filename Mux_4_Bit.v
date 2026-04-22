@@ -1,4 +1,4 @@
-module Mux4(
+module Mux_4_Bit(
     input  wire [31:0] input_0,
     input  wire [31:0] input_1,
     input  wire [31:0] input_2,

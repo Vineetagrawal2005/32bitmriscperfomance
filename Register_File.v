@@ -13,9 +13,7 @@ module Register_File(
     reg [31:0] reg_File [0:31];
     integer i;
 
-    // -----------------------------
     // WRITE
-    // -----------------------------
     always @(posedge clock or posedge rst) begin
         if (rst) begin
             for (i = 0; i < 32; i = i + 1)
@@ -26,18 +24,8 @@ module Register_File(
         end
     end
 
-    // -----------------------------
-    // READ (SAFE)
-    // -----------------------------
-    // rd1
-    assign rd1 = (a1 == 5'd0) ? 32'd0 :                         // $zero
-                 (RegWrite && (a3 == a1) && (a3 != 5'd0)) ? wd3 // forwarding
-                 : reg_File[a1];
-
-    // rd2
-    assign rd2 = (a2 == 5'd0) ? 32'd0 :
-                 (RegWrite && (a3 == a2) && (a3 != 5'd0)) ? wd3
-                 : reg_File[a2];
-
+    // READ (NO FORWARDING)
+    assign rd1 = (a1 == 5'd0) ? 32'd0 : reg_File[a1];
+    assign rd2 = (a2 == 5'd0) ? 32'd0 : reg_File[a2];
 
 endmodule

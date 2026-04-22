@@ -17,7 +17,7 @@ output wire        sig_PCWrite,
 output wire        sig_Branch,
 output wire        sig_BranchNE,
 output wire        sig_RegWrite,
-
+output wire sig_MemRead,
 output reg  [3:0]  state,
 output reg  [2:0]  alu_Control
 
@@ -115,7 +115,9 @@ assign sig_PCSrc =
 
 // BASIC CONTROL
 assign sig_IRWrite  = (state == S_FETCH);
-assign sig_PCWrite  = (state == S_FETCH) | (state == S_JUMP);
+assign sig_PCWrite =
+    (state == S_FETCH) |
+    (state == S_JUMP );
 assign sig_MemWrite = (state == S_MWRITE);
 
 // BRANCH CONTROL
@@ -125,8 +127,11 @@ assign sig_BranchNE = (state == S_BEXEC) & (instr_Opcode == OP_BNE);
 // REGISTER CONTROL
 assign sig_RegDst   = (state == S_REXEC);
 
-assign sig_MemtoReg = (state == S_MWBACK) ? 2'b01 : 2'b00;
-
+assign sig_MemtoReg =
+    (state == S_MWBACK) ? 2'b01 :  // LW
+    (state == S_REXEC || state == S_IEXEC) ? 2'b00 :
+    2'b00;
+assign sig_MemRead = (state == S_MREAD);
 assign sig_RegWrite =
     (state == S_MWBACK) |
     (state == S_REXEC ) |

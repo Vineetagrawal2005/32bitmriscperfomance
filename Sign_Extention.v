@@ -1,15 +1,14 @@
-// =============================================================================
-//  Sign_Extention.v  —  16-bit to 32-bit Sign Extension
-//
-//  No functional changes — original was already optimal.
-//  Filename kept as Sign_Extention.v (matches original typo in project).
-// =============================================================================
-
-module Sign_Extension(
+module Sign_Extention(
     input  wire [15:0] immediate,
+    input  wire [5:0]  opcode,      // NEW
     output wire [31:0] sign_Imm
 );
 
-    assign sign_Imm = {{16{immediate[15]}}, immediate};
+    // ANDI = 001100
+    // ORI  = 001101
+    assign sign_Imm =
+        (opcode == 6'b001100 || opcode == 6'b001101) ?
+            {16'd0, immediate} :                 // ZERO EXTENSION
+            {{16{immediate[15]}}, immediate};    // SIGN EXTENSION
 
 endmodule

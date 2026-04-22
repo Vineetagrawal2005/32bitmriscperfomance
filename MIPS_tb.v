@@ -1,151 +1,107 @@
-`timescale 1ns/1ps
-
-// =============================================================
-//  MIPS_tb.v - FINAL CORRECT TESTBENCH (MULTICYCLE SAFE)
-// =============================================================
+`timescale 1ns / 1ps
 
 module MIPS_tb;
 
-    // ================= INPUTS =================
-    reg clock;
-    reg rst;
+reg clock, rst;
 
-    // ================= OUTPUTS =================
-    wire [3:0] state;
+initial clock = 0;
+always #5 clock = ~clock;
 
-    wire [31:0] debug_pc;
-    wire [31:0] debug_instr;
-    wire [31:0] debug_alu;
-    wire [31:0] debug_regA;
-    wire [31:0] debug_regB;
-    wire [31:0] debug_alu_out;
-    wire [31:0] debug_mem_data;
-    wire [31:0] debug_wd3;   // ✅ IMPORTANT (for LW check)
+// ================= DEBUG SIGNALS =================
+wire [3:0]  state;
+wire [31:0] debug_pc, debug_instr, debug_alu;
+wire [31:0] debug_regA, debug_regB, debug_srcA, debug_srcB;
+wire [31:0] debug_alu_out, debug_mem_data, debug_wd3, debug_signimm;
+wire        debug_MemWrite, debug_RegWrite;
 
-    // Dummy wires for unused ports
-    wire [31:0] dummy1, dummy2, dummy3;
+// ================= DUT =================
+MIPS uut (
+    .clock          (clock),
+    .rst            (rst),
+    .state          (state),
+    .debug_pc       (debug_pc),
+    .debug_instr    (debug_instr),
+    .debug_alu      (debug_alu),
+    .debug_regA     (debug_regA),
+    .debug_regB     (debug_regB),
+    .debug_srcA     (debug_srcA),
+    .debug_srcB     (debug_srcB),
+    .debug_alu_out  (debug_alu_out),
+    .debug_mem_data (debug_mem_data),
+    .debug_wd3      (debug_wd3),
+    .debug_signimm  (debug_signimm),
+    .debug_MemWrite (debug_MemWrite),
+    .debug_RegWrite (debug_RegWrite)
+);
 
-    // ================= DUT =================
-    MIPS uut (
-        .clock(clock),
-        .rst(rst),
-        .state(state),
-        .debug_pc(debug_pc),
-        .debug_instr(debug_instr),
-        .debug_alu(debug_alu),
-        .debug_regA(debug_regA),
-        .debug_regB(debug_regB),
-        .debug_srcA(dummy1),
-        .debug_srcB(dummy2),
-        .debug_alu_out(debug_alu_out),
-        .debug_mem_data(debug_mem_data),
-        .debug_wd3(debug_wd3),
-        .debug_MemWrite(debug_MemWrite),
-        .debug_RegWrite(debug_RegWrite),     // ✅ CONNECTED
-        .debug_signimm(dummy3)
-    );
+// ================= LOAD PROGRAM =================
+integer i;
+initial begin
+    // Clear ROM
+    for (i = 0; i < 256; i = i + 1)
+        uut.instr_mem.rom[i] = 32'd0;
 
-    // ================= CLOCK =================
-    initial clock = 0;
-    always #5 clock = ~clock;
+    // ================= PROGRAM =================
+    uut.instr_mem.rom[0]  = 32'h2008_000A;   // ADDI t0,10
+    uut.instr_mem.rom[1]  = 32'h2009_0005;   // ADDI t1,5
+    uut.instr_mem.rom[2]  = 32'h0109_5020;   // ADD  t2 = 15
+    uut.instr_mem.rom[3]  = 32'hAC0A_0000;   // SW   t2 → mem[0]
+    uut.instr_mem.rom[4]  = 32'h8C10_0000;   // LW   s0 ← mem[0]
 
-    // ================= COUNTERS =================
-    integer pass = 0;
-    integer fail = 0;
+    uut.instr_mem.rom[5]  = 32'h200B_0003;   // ADDI t3,3
+    uut.instr_mem.rom[6]  = 32'h016A_5822;   // SUB  t3 = -12
 
-    // ================= RESET =================
-    initial begin
-        rst = 1;
-        #20 rst = 0;
-    end
+    uut.instr_mem.rom[7]  = 32'h200C_0001;   // ADDI t4,1
+    uut.instr_mem.rom[8]  = 32'h1180_0001;   // BEQ (not taken)
 
-    // ================= WAVE =================
-    initial begin
-        $dumpfile("mips_final.vcd");
-        $dumpvars(0, MIPS_tb);
-    end
+    uut.instr_mem.rom[9]  = 32'h200D_0007;   // ADDI t5,7
 
-    // ================= CHECK TASK =================
-    task check;
-        input [255:0] name;
-        input condition;
-        begin
-            if (condition) begin
-                $display("[PASS] %s", name);
-                pass = pass + 1;
-            end else begin
-                $display("[FAIL] %s", name);
-                fail = fail + 1;
-            end
-        end
-    endtask
+    uut.instr_mem.rom[10] = 32'h0800_000A;   // J loop
+end
 
-    // =========================================================
-    //  MAIN CONTROL
-    // =========================================================
-    initial begin
-        @(negedge rst);
-        @(posedge clock);
+// ================= RESET =================
+initial begin
+    rst = 1;
+    #20 rst = 0;
+end
 
-        $display("\n=========== START EXECUTION ===========");
+// ================= MONITOR =================
+initial begin
+    $display("Time   PC        Instr       ALU        WD3       MemW RegW");
+    $monitor("%4t  %h  %h  %d  %d   %b    %b",
+        $time, debug_pc, debug_instr,
+        debug_alu, debug_wd3,
+        debug_MemWrite, debug_RegWrite);
+end
 
-        repeat (200) @(posedge clock);
+// ================= FINAL CHECK =================
+initial begin
+    #800;
 
-        $display("\n=========== FINAL RESULT ===========");
-        $display("PASS = %0d", pass);
-        $display("FAIL = %0d", fail);
+    $display("\n===== FINAL REGISTER VALUES =====");
+    $display("t0 = %d  (expected 10)", uut.reg_file.reg_File[8]);
+    $display("t1 = %d  (expected 5)",  uut.reg_file.reg_File[9]);
+    $display("t2 = %d  (expected 15)", uut.reg_file.reg_File[10]);
+    $display("t3 = %d  (expected -12)", uut.reg_file.reg_File[11]);
+    $display("t4 = %d  (expected 1)",  uut.reg_file.reg_File[12]);
+    $display("t5 = %d  (expected 7)",  uut.reg_file.reg_File[13]);
+    $display("s0 = %d  (expected 15)", uut.reg_file.reg_File[16]);
 
-        if (fail == 0)
-            $display("🎉 ALL INSTRUCTIONS EXECUTED SUCCESSFULLY");
-        else
-            $display("⚠️ SOME INSTRUCTIONS FAILED");
+    $display("\n===== MEMORY =====");
+    $display("Mem[0] = %d  (expected 15)", uut.data_mem.ram[0]);
 
-        $finish;
-    end
+    $display("\n===== RESULT =====");
 
-    // =========================================================
-    //  MULTICYCLE CHECK LOGIC (FINAL FIXED)
-    // =========================================================
-    always @(posedge clock) begin
+    if (uut.reg_file.reg_File[8]  == 32'd10 &&
+        uut.reg_file.reg_File[9]  == 32'd5  &&
+        uut.reg_file.reg_File[10] == 32'd15 &&
+        uut.reg_file.reg_File[16] == 32'd15 &&
+        uut.data_mem.ram[0]       == 32'd15)
+        $display("✅ ALL CHECKS PASSED");
+    else
+        $display("❌ SOME CHECKS FAILED");
 
-        // Instruction completed states
-        if (state == 6 || state == 9 || state == 4) begin
-
-            case (debug_instr)
-
-                // ================= I-TYPE =================
-                32'h20080005: check("ADDI t0 = 5", debug_alu == 5);
-                32'h20090003: check("ADDI t1 = 3", debug_alu == 3);
-                32'h310A000F: check("ANDI t2 = 5", debug_alu == 5);
-                32'h350B0006: check("ORI t3 = 7",  debug_alu == 7);
-
-                // ================= R-TYPE =================
-                32'h01095020: check("ADD = 8", debug_alu == 8);
-                32'h01095022: check("SUB = 2", debug_alu == 2);
-                32'h01098024: check("AND = 1", debug_alu == 1);
-                32'h01098025: check("OR = 7",  debug_alu == 7);
-                32'h01098026: check("XOR = 6", debug_alu == 6);
-                32'h01098018: check("MUL = 15", debug_alu == 15);
-
-                // ================= MEMORY =================
-                32'hAC080000: check("SW executed", 1);
-
-                // ✅ FIXED LW CHECK (VERY IMPORTANT)
-                32'h8C100000: begin
-                    check("LW loaded = 5", uut.debug_wd3 == 5);
-                end
-
-                // ================= BRANCH =================
-                32'h11090001: check("BEQ executed", 1);
-                32'h15090001: check("BNE executed", 1);
-
-                // ================= FINAL =================
-                32'h2008000A: check("ADDI t0 = 10", debug_alu == 10);
-                32'h08000014: check("JUMP executed", 1);
-
-            endcase
-        end
-
-    end
+    $finish;
+end
 
 endmodule

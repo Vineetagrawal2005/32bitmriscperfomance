@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 module Instruction_Memory(
     input  wire [31:0] adr,
     output wire [31:0] instr
@@ -10,40 +12,39 @@ module Instruction_Memory(
         for (i = 0; i < 256; i = i + 1)
             rom[i] = 32'd0;
 
-        // I-type
-        rom[0]  = 32'h20080005; // ADDI $t0, $zero, 5
-        rom[1]  = 32'h20090003; // ADDI $t1, $zero, 3
-        rom[2]  = 32'h310A000F; // ANDI $t2, $t0, 15
-        rom[3]  = 32'h350B0006; // ORI  $t3, $t0, 6
+       // ================= ARITHMETIC =================
+    rom[0]  = 32'h2008_000A;   // ADDI $t0,10
+    rom[1]  = 32'h2009_0005;   // ADDI $t1,5
+    rom[2]  = 32'h0109_5020;   // ADD  $t2 = t0+t1 = 15
+    rom[3]  = 32'h0109_5022;   // SUB  $t2 = t0-t1 = 5
 
-        // R-type
-        rom[4]  = 32'h01095020; // ADD
-        rom[5]  = 32'h01095022; // SUB
-        rom[6]  = 32'h01098024; // AND
-        rom[7]  = 32'h01098025; // OR
-        rom[8]  = 32'h01098026; // XOR
-        rom[9]  = 32'h01098018; // MUL
+    // ================= LOGIC =================
+    rom[4]  = 32'h0109_5024;   // AND  $t2 = t0 & t1
+    rom[5]  = 32'h0109_5025;   // OR   $t2 = t0 | t1
+    rom[6]  = 32'h0109_5026;   // XOR  $t2 = t0 ^ t1
 
-        // Memory
-        rom[10] = 32'hAC080000; // SW
-        rom[11] = 32'h8C100000; // LW
+    // ================= SHIFT =================
+    rom[7]  = 32'h00095080;   // SLL  $t2 = t1 << 2
+    rom[8]  = 32'h00095082;   // SRL  $t2 = t1 >> 2
 
-        // Branch (FIXED)
-        rom[12] = 32'h11090001; // BEQ +1
-        rom[13] = 32'h15090001; // BNE +1
+    // ================= IMMEDIATE =================
+    rom[9]  = 32'h200A_0003;   // ADDI $t2,3
+    rom[10] = 32'h314B_0001;   // ANDI $t3, t2,1
+    rom[11] = 32'h354C_0002;   // ORI  $t4, t2,2
 
-        rom[14] = 32'd0;
-        rom[15] = 32'd0;
+    // ================= MEMORY =================
+    rom[12] = 32'hAC0A_0000;   // SW   $t2 → Mem[0]
+    rom[13] = 32'h8C10_0000;   // LW   $s0 ← Mem[0]
 
-        rom[16] = 32'h2008000A; // ADDI
+    // ================= BRANCH =================
+    rom[14] = 32'h1109_0001;   // BEQ  t0,t1 (NOT taken)
+    rom[15] = 32'h1509_0001;   // BNE  t0,t1 (taken → skip next)
 
-        // Jump
-        rom[17] = 32'h08000014; // J 20
+    rom[16] = 32'h200D_0007;   // SKIPPED if BNE works
+    rom[17] = 32'h200D_0009;   // EXECUTED → t5 = 9
 
-        rom[18] = 32'd0;
-        rom[19] = 32'd0;
-
-        rom[20] = 32'd0;
+    // ================= JUMP =================
+    rom[18] = 32'h0800_0012;   // J → 18 (loop)   // J    0x28  (self loop / halt)
     end
 
     assign instr = rom[adr[9:2]];
