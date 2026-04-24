@@ -17,16 +17,18 @@ module Data_Memory(
             ram[i] = 0;
     end
 
+    // RAM write logic (synchronous, no async reset)
+    always @(posedge clock) begin
+        if (MemWrite)
+            ram[adr[9:2]] <= wd;
+    end
+
+    // Read register logic (with async reset)
     always @(posedge clock or posedge rst) begin
         if (rst)
             rd_reg <= 32'd0;
-        else begin
-            if (MemWrite)
-                ram[adr[9:2]] <= wd;
-
-            if (MemRead)
-                rd_reg <= ram[adr[9:2]];
-        end
+        else if (MemRead)
+            rd_reg <= ram[adr[9:2]];
     end
 
     assign rd = rd_reg;
